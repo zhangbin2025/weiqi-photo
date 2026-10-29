@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>weiqi-photo demo — 拍照还原棋盘</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, "Noto Sans TC", sans-serif; margin: 0; padding: 24px; background: #f6f7f9; color: #1a1a1a; }
+  h1 { font-size: 22px; margin: 0 0 16px; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  button { font-size: 15px; padding: 10px 18px; border: 1px solid #1a1a1a; border-radius: 8px; background: #fff; cursor: pointer; }
+  button.primary { background: #1a1a1a; color: #fff; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { font-size: 14px; color: #555; min-height: 22px; }
+  #stage { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 16px; }
+  .pane { background: #fff; border: 1px solid #e0e0e0; border-radius: 10px; padding: 12px; }
+  .pane h3 { font-size: 14px; margin: 0 0 8px; color: #555; font-weight: 600; }
+  canvas, img { max-width: 420px; max-height: 420px; display: block; border-radius: 6px; }
+  #out { font-family: ui-monospace, monospace; font-size: 13px; white-space: pre; line-height: 1.35; background: #fff; padding: 12px; border-radius: 8px; border: 1px solid #e0e0e0; }
+  .stat { font-size: 13px; color: #666; margin-top: 8px; }
+  .hit { color: #137333; font-weight: 600; }
+  .warn { color: #b06000; font-weight: 600; }
+  .miss { color: #c5221f; font-weight: 600; }
+  label { font-size: 14px; }
+  select { font-size: 14px; padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; }
+</style>
+</head>
+<body>
+<h1>weiqi-photo — 拍照还原棋盘矩阵</h1>
+
+<div class="row">
+  <input type="file" id="file" accept="image/*">
+  <label>路数
+    <select id="size">
+      <option value="0">自动</option>
+      <option value="19">19</option>
+      <option value="15">15</option>
+      <option value="13">13</option>
+      <option value="9">9</option>
+    </select>
+  </label>
+  <button class="primary" id="run" disabled>识别</button>
+  <button id="bench" disabled>跑测试集</button>
+</div>
+<div id="status">正在后台加载 opencv.js（约 10MB，首次较慢）… 你可以先选照片</div>
+
+<div id="stage">
+  <!-- ⚠️ 不要用 id="cv"：浏览器会把带 id 的元素暴露成 window.cv，
+       与 opencv 的全局变量同名，会顶掉 opencv 实例。 -->
+  <div class="pane"><h3>原图 + 检测到的四角</h3><canvas id="preview"></canvas></div>
+  <div class="pane"><h3>识别结果</h3><div id="out">—</div><div class="stat" id="stat"></div></div>
+</div>
+
+<script type="module">
+import { loadCv } from "/dist/cv/adapter.js";
+import { recognizeBoard, stonesToText } from "/dist/index.js";
+
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+const canvas = $("preview");
+const ctx = canvas.getContext("2d");
+
+let cv = null;
+let srcCanvas = null;      // 缩放后的原图 canvas
+let srcUrl = null;
+
+function say(t) { statusEl.textContent = t; }
+
+/** 把图片画进 canvas，最长边 2000 */
+async function drawImage(file) {
+  const url = URL.createObjectURL(file);
+  const im = new Image();
+  await new Promise((res, rej) => { im.onload = res; im.onerror = rej; im.src = url; });
+  const s = Math.min(1, 2000 / Math.max(im.naturalWidth, im.naturalHeight));
+  const c = document.createElement("canvas");
+  c.width = Math.round(im.naturalWidth * s);
+  c.height = Math.round(im.naturalHeight * s);
+  const cx = c.getContext("2d");
+  cx.imageSmoothingQuality = "high";
+  cx.drawImage(im, 0, 0, c.width, c.height);
+  URL.revokeObjectURL(url);
+  return c;
+}
+
+/** 在图上画四角 */
+function paint(corners) {
+  canvas.width = srcCanvas.width;
+  canvas.height = srcCanvas.height;
+  ctx.drawImage(srcCanvas, 0, 0);
+  if (!corners) return;
+  const W = canvas.width, H = canvas.height;
+  const R = Math.max(W, H) * 0.02;
+  ctx.strokeStyle = "#FF8A1F";
+  ctx.lineWidth = Math.max(2, R * 0.3);
+  ctx.beginPath();
+  const order = [0, 1, 3, 2, 0];
+  order.forEach((k, i) => {
+    const p = corners[k];
+    if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]);
+  });
+  ctx.closePath();
+  ctx.stroke();
+  ctx.fillStyle = "#FF8A1F";
+  for (const p of corners) {
+    ctx.beginPath();
+    ctx.arc(p[0], p[1], R * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+async function run() {
+  if (!srcCanvas) return;
+  $("run").disabled = true;
+  say("识别中…");
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 30)));
+  const t0 = performance.now();
+  const size = parseInt($("size").value, 10);
+  try {
+    await cvReady;
+    const img = cv.imread(srcCanvas);
+    const r = recognizeBoard(cv, img, { size });
+    img.delete();
+    const ms = Math.round(performance.now() - t0);
+    $("out").textContent = stonesToText(r.stones, r.N);
+    const dbg = r.debug || {};
+    const win = Number(dbg.win) || 0;
+    $("stat").innerHTML =
+      `路数 ${r.N}${dbg.auto ? "（自动）" : ""} · 得分 ${win.toFixed(2)} · ${ms}ms`;
+    paint(r.corners);
+    say("完成");
+    window.__last = r;
+  } catch (e) {
+    say("失败：" + (e && e.message));
+    $("out").textContent = String((e && e.stack) || e);
+  }
+  $("run").disabled = false;
+}
+
+/**
+ * 跑测试集。
+ *
+ * ⚠️ 必须在浏览器里跑，不能靠服务端：opencv 只存在于浏览器（node 端没有 cv）。
+ *    原先这里请求 POST /bench/run，但 serve.mjs 从未实现该接口
+ *    （只实现了 /bench/list），请求落到静态处理器返回 404 的 "not found"
+ *    纯文本，res.json() 解析它 → "Unexpected token 'o'"。
+ *    正确做法：前端拿 /bench/list 清单，自己逐张跑。
+ */
+async function bench() {
+  $("bench").disabled = true;
+  say("等待 opencv…");
+  try {
+    await cvReady;
+  } catch (e) {
+    say("opencv 未就绪：" + (e && e.message));
+    $("bench").disabled = false;
+    return;
+  }
+
+  try {
+    const list = await (await fetch("/bench/list")).json();
+    if (!list.items || !list.items.length) {
+      say("测试集为空（检查 serve.mjs 的 photoDir 参数）");
+      $("bench").disabled = false;
+      return;
+    }
+
+    const results = [];
+    let pass = 0, accSum = 0;
+
+    for (let i = 0; i < list.items.length; i++) {
+      const it = list.items[i];
+      say(`测试集 ${i + 1}/${list.items.length} — ${it.name}`);
+      const t0 = performance.now();
+      let rec = { name: it.name, acc: 0, N: 0, win: 0, ms: 0, err: "" };
+      try {
+        const im = await loadImage(it.img);
+        const c = drawToCanvas(im, 2000);
+        const exp = parseExpect(await (await fetch(it.txt)).text());
+
+        const img = cv.imread(c);
+        const r = recognizeBoard(cv, img, { size: 0 });
+        img.delete();
+
+        let hit = 0;
+        if (r.N === exp.N) {
+          for (let k = 0; k < exp.N * exp.N; k++) if (r.stones[k] === exp.stones[k]) hit++;
+        } else {
+          rec.err = `路数不符(得${r.N} 期${exp.N})`;
+        }
+        const acc = r.N === exp.N ? hit / (exp.N * exp.N) : 0;
+        const dbg = r.debug || {};
+        rec = {
+          name: it.name,
+          acc,
+          N: r.N,
+          win: Number(dbg.win) || 0,
+          ms: Math.round(performance.now() - t0),
+          err: rec.err,
+        };
+        if (acc === 1) pass++;
+        accSum += acc;
+      } catch (e) {
+        // 之前 slice(0,60) 把 drawImage 的完整报错截成了
+        // "Failed to execute 'drawImage' on 'CanvasRenderingContext2D':"
+        // （正好 60 字符），看不到真正原因。放宽 + 完整打到 console。
+        rec.err = String((e && e.message) || e).slice(0, 300);
+        console.error("[bench] " + it.name, e);
+        rec.ms = Math.round(performance.now() - t0);
+      }
+      results.push(rec);
+      renderBench(results, pass, accSum);
+      // 让出主线程，UI 才刷得动（否则 37 张连跑会把页面冻住）
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    say(`测试集完成：${pass}/${results.length} 全对，平均准确率 ${((accSum / results.length) * 100).toFixed(2)}%`);
+  } catch (e) {
+    say("测试集失败：" + (e && e.message));
+  }
+  $("bench").disabled = false;
+}
+
+/**
+ * 加载图片元素。
+ *
+ * ⚠️ 不能写 `im.onload = res`：那样 res 收到的是 **Event 对象**，
+ *    await 出来的不是 HTMLImageElement，后面 drawImage 会抛
+ *    "Failed to execute 'drawImage' on 'CanvasRenderingContext2D': The provided
+ *     value is not of type '(CSSImageValue or HTMLImageElement or ...)'"。
+ *    必须显式 resolve(im)。
+ */
+function loadImage(url) {
+  const im = new Image();
+  return new Promise((res, rej) => {
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("图片加载失败: " + url));
+    im.src = url;
+  });
+}
+
+/** 把图片画进 canvas，最长边 maxSide */
+function drawToCanvas(im, maxSide) {
+  const W = im ? im.naturalWidth : 0;
+  const H = im ? im.naturalHeight : 0;
+  // 尺寸为 0 时 drawImage 会抛难懂的错，这里先给明确信息
+  if (!W || !H) throw new Error(`图片尺寸为 0（未加载成功？）${W}x${H}`);
+  const s = Math.min(1, maxSide / Math.max(W, H));
+  const c = document.createElement("canvas");
+  c.width = Math.round(W * s);
+  c.height = Math.round(H * s);
+  const cx = c.getContext("2d");
+  cx.imageSmoothingQuality = "high";
+  cx.drawImage(im, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** 解析期望矩阵：空格分隔的 '.', 'B', 'W' → 0/1/2 */
+function parseExpect(text) {
+  const rows = text.trim().split("\n").map((r) => r.trim().split(/\s+/));
+  const N = rows.length;
+  const s = new Uint8Array(N * N);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const t = (rows[j][i] || ".").toLowerCase();
+      s[j * N + i] = t === "b" || t === "1" || t === "x" ? 1 : t === "w" || t === "2" || t === "o" ? 2 : 0;
+    }
+  }
+  return { N, stones: s };
+}
+
+function renderBench(items, pass, accSum) {
+  const rows = items.map((it) => {
+    const cls = it.acc === 1 ? "hit" : it.acc >= 0.95 ? "warn" : "miss";
+    return `<tr><td>${it.name}</td><td class="${cls}">${(it.acc * 100).toFixed(1)}%</td>` +
+           `<td>${it.N}</td><td>${it.win ? it.win.toFixed(2) : "-"}</td><td>${it.ms}ms</td>` +
+           `<td>${it.err || ""}</td></tr>`;
+  }).join("");
+  const avg = items.length ? (accSum / items.length) * 100 : 0;
+  $("out").innerHTML =
+    `<div style="font-size:13px;margin-bottom:8px">已跑 ${items.length} 张 · 全对 ${pass} · 平均 ${avg.toFixed(2)}%</div>` +
+    `<table border="1" cellpadding="4" cellspacing="0" style="font-size:12px;border-collapse:collapse">` +
+    `<tr><th>文件</th><th>准确率</th><th>路数</th><th>得分</th><th>耗时</th><th>错误</th></tr>${rows}</table>`;
+}
+
+$("file").addEventListener("change", async (e) => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  say("读图…");
+  if (srcUrl) URL.revokeObjectURL(srcUrl);
+  srcCanvas = await drawImage(f);
+  paint(null);
+  $("run").disabled = false;
+  say(cv ? "就绪，点「识别」" : "照片已就绪，opencv 仍在后台初始化，点「识别」会自动等待");
+});
+$("run").addEventListener("click", run);
+$("bench").addEventListener("click", bench);
+
+// 加载 opencv（主线程）。
+//
+// 曾尝试把 opencv 挪进 Web Worker 以避免「页面无响应」，已撤回：
+//   1) module worker 里没有 importScripts()，而 opencv.js 在 Worker 分支
+//      依赖它 —— 用 new Worker(url, {type:"module"}) 必然抛错；
+//   2) 前提本身也不成立：实测纯 wasm 编译只要 ~30ms，编译并不慢。
+// 主线程方案本身可用，无需 Worker。
+//
+// ?local=1 切换的是「opencv.js 从哪来」，与上面的 Worker 无关，是另一回事：
+//   · 默认：从 CDN 拉 9.9MB 的完整 opencv.js（wasm 以 base64 内嵌）
+//   · local：用本地 dist/opencv.stripped.js(223KB) + dist/opencv.wasm(7.6MB)，
+//           省掉 base64 解码，并让 emscripten 走 instantiateStreaming
+// 实测差异（chromium）：默认冷缓存 14.2s / 有缓存 5.8s，local 两者均约 0.3s。
+//   差距主要来自外网带宽（从 CDN 拉 9.9MB 通常要几十秒），**不是**编译时间。
+//   所以外网快的机器上默认模式也很快 —— 用哪个都行。
+// local 依赖的 dist/opencv.wasm + opencv.stripped.js 由
+//   node tools/extract-wasm.mjs
+// 生成，被 .gitignore 忽略；缺这俩文件时请走默认模式。
+const LOCAL = new URLSearchParams(location.search).get("local") === "1";
+const cvReady = (async () => {
+  cv = await loadCv({
+    ...(LOCAL ? { url: "/dist/opencv.stripped.js", wasmUrl: "/dist/opencv.wasm" } : {}),
+    timeoutMs: 120000,
+    onProgress: (p) => {
+      if (p.stage === "fetch-js" && p.total) {
+        say(`下载 opencv.js ${(p.loaded / 1048576).toFixed(2)}/${(p.total / 1048576).toFixed(2)} MB`);
+      } else if (p.stage === "patch") {
+        say("已切换外置 wasm（流式编译）");
+      } else if (p.stage === "compile") {
+        say("初始化 opencv…");
+      }
+    },
+  });
+  say("opencv 就绪" + (srcCanvas ? "，点「识别」" : "，选一张照片"));
+  $("run").disabled = !srcCanvas;
+  $("bench").disabled = false;
+  return cv;
+})().catch((e) => {
+  say("opencv 加载失败：" + (e && e.message));
+  throw e;
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>weiqi-photo 标定数据导出</title>
+<style>
+  body { font-family: system-ui, monospace; margin: 18px; background: #f6f7f9; }
+  #st { padding: 10px; background: #fff; border-radius: 6px; margin-bottom: 10px; font-size: 14px; }
+  button { padding: 9px 16px; font-size: 14px; border-radius: 7px; cursor: pointer; }
+  pre { background: #111; color: #0f0; padding: 12px; border-radius: 8px; max-height: 340px;
+        overflow: auto; font-size: 12px; white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<h2>标定数据导出</h2>
+<div id="st">等待 opencv…</div>
+<button id="go">导出全部特征 + 标签</button>
+<button id="dl" disabled>下载 JSON</button>
+<pre id="log">…</pre>
+
+<script type="module">
+import { loadCv } from "/dist/cv/adapter.js";
+import { recognizeBoard } from "/dist/index.js";
+
+const $ = (id) => document.getElementById(id);
+const log = (s) => { $("log").textContent += s + "\n"; $("log").scrollTop = 1e9; };
+let DATA = null;
+
+const cvReady = loadCv();
+cvReady.then(() => { $("st").textContent = "opencv 就绪，可以导出"; $("go").disabled = false; })
+       .catch((e) => { $("st").textContent = "opencv 失败: " + (e && e.message); });
+
+function loadImage(url) {
+  const im = new Image();
+  return new Promise((res, rej) => {
+    im.onload = () => res(im);
+    im.onerror = () => rej(new Error("图片加载失败: " + url));
+    im.src = url;
+  });
+}
+
+function drawToCanvas(im, maxSide) {
+  const W = im.naturalWidth, H = im.naturalHeight;
+  if (!W || !H) throw new Error("图片尺寸为 0");
+  const s = Math.min(1, maxSide / Math.max(W, H));
+  const c = document.createElement("canvas");
+  c.width = Math.round(W * s); c.height = Math.round(H * s);
+  const cx = c.getContext("2d");
+  cx.imageSmoothingQuality = "high";
+  cx.drawImage(im, 0, 0, c.width, c.height);
+  return c;
+}
+
+/** 解析期望矩阵：'.' / 'B' / 'W' → 0/1/2 */
+function parseExpect(text) {
+  const rows = text.trim().split("\n").map((r) => r.trim().split(/\s+/));
+  const N = rows.length;
+  const s = new Uint8Array(N * N);
+  for (let j = 0; j < N; j++) {
+    for (let i = 0; i < N; i++) {
+      const t = (rows[j][i] || ".").toLowerCase();
+      s[j * N + i] = t === "b" || t === "1" || t === "x" ? 1 : t === "w" || t === "2" || t === "o" ? 2 : 0;
+    }
+  }
+  return { N, stones: s };
+}
+
+$("go").addEventListener("click", async () => {
+  $("go").disabled = true;
+  try {
+    const cv = await cvReady;
+    const list = await (await fetch("/bench/list")).json();
+    const items = [];
+
+    for (let k = 0; k < list.items.length; k++) {
+      const it = list.items[k];
+      $("st").textContent = `导出 ${k + 1}/${list.items.length} — ${it.name}`;
+      try {
+        const im = await loadImage(it.img);
+        const c = drawToCanvas(im, 2000);
+        const exp = parseExpect(await (await fetch(it.txt)).text());
+
+        const img = cv.imread(c);
+        const r = recognizeBoard(cv, img, { size: 0, keepFeatures: true });
+        img.delete();
+
+        const F = r.debug && r.debug.features;
+        if (!F) { log(`❌ ${it.name}: 无 features（keepFeatures 未生效？）`); continue; }
+        if (r.N !== exp.N) { log(`⚠️ ${it.name}: 路数不符 得${r.N} 期${exp.N}，跳过`); continue; }
+
+        // 每格一条样本：特征 + 真值标签
+        const rows = [];
+        for (let j = 0; j < r.N; j++) {
+          for (let i = 0; i < r.N; i++) {
+            const f = F[j][i];
+            rows.push({
+              img: it.name, i, j,
+              circ: f.circ, arm: f.arm, sd: f.sd, v: f.v, vq: f.vq,
+              vc: f.vc, line: f.line, sat: f.sat, nsd: f.nsd,
+              yb: f.yb, yb0: f.yb0,
+              label: exp.stones[j * r.N + i],   // 0空 1黑 2白
+            });
+          }
+        }
+        items.push({ name: it.name, N: r.N, win: r.debug.win || 0, rows });
+        log(`✅ ${it.name}  ${rows.length} 格`);
+      } catch (e) {
+        log(`❌ ${it.name}: ${(e && e.message) || e}`);
+      }
+      await new Promise((r) => setTimeout(r, 0));
+    }
+
+    DATA = { exportedAt: new Date().toISOString(), images: items };
+    const total = items.reduce((a, b) => a + b.rows.length, 0);
+    $("st").textContent = `完成：${items.length} 张 / ${total} 个样本`;
+    $("dl").disabled = false;
+    log(`\n总计 ${items.length} 张，${total} 个样本`);
+    window.__DATA = DATA;
+  } catch (e) {
+    log("失败: " + (e && e.message));
+    $("st").textContent = "导出失败";
+  }
+  $("go").disabled = false;
+});
+
+$("dl").addEventListener("click", () => {
+  if (!DATA) return;
+  const blob = new Blob([JSON.stringify(DATA)], { type: "application/json" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "calib-data.json";
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,43 @@
+{
+  "name": "weiqi-photo",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "纯前端拍照还原围棋棋盘矩阵库 — 从照片中检测棋盘四角并识别黑白空矩阵",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "clean": "rm -rf dist coverage *.tsbuildinfo",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "bench": "node tools/serve.mjs",
+    "demo": "node tools/serve.mjs"
+  },
+  "keywords": [
+    "weiqi",
+    "go",
+    "baduk",
+    "board-detection",
+    "computer-vision",
+    "opencv"
+  ],
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  }
+}

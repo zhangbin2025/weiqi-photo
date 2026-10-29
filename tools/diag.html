@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>opencv 加载诊断</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 16px; background: #f6f7f9; }
+  h2 { font-size: 18px; }
+  #st { font-family: ui-monospace, monospace; font-size: 13px; color: #c5221f; }
+  #prev { white-space: pre; font-family: ui-monospace, monospace; font-size: 12px;
+          background: #332; color: #fa0; padding: 10px; border-radius: 8px;
+          margin-bottom: 10px; max-height: 220px; overflow: auto; }
+  #log { white-space: pre; font-family: ui-monospace, monospace; font-size: 12px;
+         background: #111; color: #0f0; padding: 12px; height: 58vh; overflow: auto;
+         border-radius: 8px; }
+  button { padding: 8px 14px; margin-right: 8px; font-size: 14px; border-radius: 6px; cursor: pointer; }
+  .hint { color: #555; font-size: 13px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<h2>opencv 加载诊断</h2>
+<p>最后状态：<span id="st">初始化…</span></p>
+<p class="hint">
+  主线程若被同步死循环阻塞，<b>HB 心跳会停止</b>（页面标题也会停住）——
+  那时「最后一条日志之后」就是死循环位置。<br>
+  日志实时写入 localStorage，<b>页面冻住后刷新本页即可看到上次日志</b>（上方橙色框）。
+</p>
+<button id="copy">复制日志</button>
+<button id="save">下载日志</button>
+<button id="clear">清空上次日志</button>
+<div id="prev" hidden></div>
+<div id="log"></div>
+
+<!-- 经典脚本先跑：在任何 module 之前装好钩子 -->
+<script>
+(function () {
+  var KEY = "cvdiaglog";
+  var lines = [];
+  var logEl = document.getElementById("log");
+  var st = document.getElementById("st");
+  var t0 = performance.now();
+
+  var RUN = Math.random().toString(36).slice(2, 8);
+
+  function L(s) {
+    s = "[" + ((performance.now() - t0) / 1000).toFixed(3) + "s] " + s;
+    lines.push(s);
+    console.log(s);
+    if (logEl) {
+      logEl.textContent = lines.join("\n");
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    if (st) st.textContent = s;
+    document.title = "cvdiag " + s.slice(0, 50);
+    try { localStorage.setItem(KEY, lines.join("\n")); } catch (e) {}
+    // 实时上报：主线程冻住前产生的每一行都已发出，无需用户操作
+    try { navigator.sendBeacon("/diaglog", "[" + RUN + "] " + s + "\n"); } catch (e) {}
+  }
+  window.L = L;
+  L("=== RUN " + RUN + "  " + new Date().toISOString() + "  UA=" + navigator.userAgent.slice(0, 60) + " ===");
+
+  // 展示上次（可能是冻结那次）的日志
+  try {
+    var prev = localStorage.getItem(KEY);
+    if (prev) {
+      var el = document.getElementById("prev");
+      el.hidden = false;
+      el.textContent = "▲ 上一次运行的日志（若上次的最后一行不是 *** READY *** / *** FAILED ***，那就是冻结点）：\n" + prev;
+    }
+  } catch (e) {}
+
+  window.onerror = function (m) { L("!! ERROR " + m); };
+  window.addEventListener("unhandledrejection", function (e) { L("!! REJECT " + e.reason); });
+
+  // ── 心跳：主线程被同步阻塞就会停 ──
+  var hb = 0;
+  setInterval(function () { hb++; L("HB " + hb + "s"); }, 1000);
+
+  // ── WebAssembly 钩子：看是否进入/离开 wasm 编译 ──
+  var W = WebAssembly;
+  function wrap(name) {
+    var orig = W[name];
+    if (typeof orig !== "function") { L("(WebAssembly." + name + " 不可用)"); return; }
+    W[name] = function () {
+      var a = arguments;
+      L(">> WebAssembly." + name + "(" + (a[0] && a[0].byteLength ? a[0].byteLength + " bytes" : typeof a[0]) + ")");
+      var r;
+      try { r = orig.apply(this, a); }
+      catch (e) { L("<< WebAssembly." + name + " THREW " + e); throw e; }
+      if (r && typeof r.then === "function") {
+        r.then(function (x) { L("<< WebAssembly." + name + " resolved"); return x; },
+               function (e) { L("<< WebAssembly." + name + " REJECTED " + e); });
+      } else {
+        L("<< WebAssembly." + name + " returned sync");
+      }
+      return r;
+    };
+  }
+  wrap("compile");
+  wrap("instantiate");
+  wrap("instantiateStreaming");
+
+  L("页面就绪  url=" + location.href);
+})();
+</script>
+
+<script type="module">
+const L = window.L;
+const local = new URLSearchParams(location.search).get("local") === "1";
+L("module start  local=" + local + "  (local=1 → 223KB 剥离版 + 外置 wasm)");
+
+const { loadCv, setCvDebug } = await import("/dist/cv/adapter.js");
+setCvDebug(true);
+L("adapter 已加载");
+
+try {
+  const opt = local
+    ? { url: "/dist/opencv.stripped.js", wasmUrl: "/dist/opencv.wasm", timeoutMs: 120000 }
+    : { timeoutMs: 120000 };
+  const cv = await loadCv(opt);
+  L("*** READY  cv.Mat=" + typeof cv.Mat + " ***");
+} catch (e) {
+  L("*** FAILED: " + (e && e.message) + " ***");
+}
+
+document.getElementById("copy").onclick = () => {
+  navigator.clipboard.writeText(document.getElementById("log").textContent);
+  L("已复制");
+};
+document.getElementById("save").onclick = () => {
+  const b = new Blob([document.getElementById("log").textContent], { type: "text/plain" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(b); a.download = "cvlog.txt"; a.click();
+};
+document.getElementById("clear").onclick = () => {
+  try { localStorage.removeItem("cvdiaglog"); } catch (e) {}
+  L("已清空上次日志");
+};
+</script>
+</body>
+</html>
