@@ -116,6 +116,11 @@ export function feats(Wp: Warped, off: OffsetField | null, blk: BlkParams, gl: G
         arms.push(((md - mn) / Math.max(md, 1)) * 100);
         rawv.push(md - mn);
       }
+      // 诊断：保留未排序的四方向值 [右,左,下,上]
+      // arm[0]/arm[1] 检测「穿过交点的横线」；arm[2]/arm[3] 检测「竖线」。
+      // 排序会打乱轴向配对，故在排序前另存一份。
+      const armsD = arms.slice();
+      const rawvD = rawv.slice();
       arms.sort((x, y) => x - y);
       rawv.sort((x, y) => x - y);
 
@@ -230,6 +235,8 @@ export function feats(Wp: Warped, off: OffsetField | null, blk: BlkParams, gl: G
       }
 
       row.push({
+        armL: arms, lineL: rawv,
+        armD: armsD, lineD: rawvD,
         ox: obx, oy: oby, dc,
         v: mv, vq,
         arm: arms[2], line: rawv[2],

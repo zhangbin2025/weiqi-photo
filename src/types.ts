@@ -54,6 +54,14 @@ export interface DebugInfo {
   threshold: number;
   /** 每交叉点特征（可选） */
   features: CellFeature[][] | null;
+  /** 诊断：扩展格点 (N+2M)² 的原始逐格特征（滑窗 E 由它算出） */
+  Fh?: unknown[] | null;
+  /** 诊断：每条扩展格线是否落在图内（ins 矩阵） */
+  Ins?: number[][] | null;
+  /** 诊断：内向支撑门控判定 OK 的行 */
+  isRowOK?: boolean[] | null;
+  /** 诊断：内向支撑门控判定 OK 的列 */
+  isColOK?: boolean[] | null;
   /** 附加的任意诊断数据 */
   [key: string]: unknown;
 }
@@ -73,6 +81,14 @@ export interface CellFeature {
   arm: number;
   /** 原始手臂凹陷度 */
   line: number;
+  /** 诊断：四方向手臂凹陷度（排序后，升序） */
+  armL?: number[];
+  /** 诊断：四方向手臂原始值（排序后，升序） */
+  lineL?: number[];
+  /** 诊断：四方向手臂凹陷度（未排序，顺序 [右,左,下,上]） */
+  armD?: number[];
+  /** 诊断：四方向手臂原始值（未排序，顺序 [右,左,下,上]） */
+  lineD?: number[];
   /** 圆盘灰度标准差 */
   sd: number;
   /** 圆形度 0~1，判子的核心特征 */

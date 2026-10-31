@@ -147,6 +147,11 @@ function copyDbg(from: CornerDbg, to: DebugInfo): void {
   to.nSegs = from.n;
   to.fam = from.fam;
   to.per = from.per;
+  // 门控诊断透传（并列决胜 + 内向支撑判据用）
+  to.Fh = from.Fh;
+  to.Ins = from.Ins;
+  to.isRowOK = from.isRowOK;
+  to.isColOK = from.isColOK;
 }
 
 function cleanupSM(SM: SmallImage): void {

@@ -68,6 +68,12 @@ export interface RqParams {
   on: boolean;
   g: number; ma: number; c: number; m: number; ec: number;
   alt: number; na: number; rw: number; rm: number; rs: number;
+  /** 内向支撑门控：0=关，1=开（默认） */
+  is: number;
+  /** 手臂视为「有支撑」的阈值 */
+  isT: number;
+  /** 一行/列至少要有多少格测到内向支撑 */
+  isK: number;
 }
 
 /** 摩尔纹抑制 */
@@ -125,7 +131,8 @@ export const DEFAULT_PARAMS: Params = {
     dbg: false, di: -1, dj: -1,
   },
   lf: { on: true, r: 0.3, lo: 0.55, hi: 1.12, n: 0.5, t: 3, pk: 2.5, min: 4, tol: 0.08, max: 0.45, minc: 0.04, hom: false, hn: 4, ht: 2.0 },
-  rq: { on: true, g: 0.08, ma: 0.005, c: 0.35, m: 0.02, ec: 0.4, alt: 0.5, na: 3, rw: 0.9, rm: 0.03, rs: 0.97 },
+  rq: { on: true, g: 0.08, ma: 0.005, c: 0.35, m: 0.02, ec: 0.4, alt: 0.5, na: 3, rw: 0.9, rm: 0.03, rs: 0.97,
+    is: 1, isT: 20, isK: 3 },
   mo: { on: true, t: 3.0, s: 3, s1: 1 },
   au: { w: 0.9, r: 0.42, ns: [19, 15, 13, 9] },
   pb: { on: true, c: 0.53, t: 6 },

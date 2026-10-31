@@ -52,6 +52,18 @@ export interface CornerDbg {
   H0: Mat3 | null;
   /** 兜底：refine 后的单应 */
   H: Mat3 | null;
+  /** 诊断：方向过滤后的线段（小图坐标） */
+  Ss?: Array<[number, number, number, number]> | null;
+  /** 诊断：solve 内 refine 后的单应 */
+  Hsolve?: number[] | null;
+  /** 诊断：内向支撑门控判定 OK 的行 */
+  isRowOK?: boolean[] | null;
+  /** 诊断：内向支撑门控判定 OK 的列 */
+  isColOK?: boolean[] | null;
+  /** 诊断：扩展格点 (N+2M)² 的原始逐格特征（滑窗 E 就是由它算出的） */
+  Fh?: unknown[] | null;
+  /** 诊断：每条扩展格线是否落在图内（ins 矩阵） */
+  Ins?: number[][] | null;
 }
 
 /** 单应矩阵求解：src/dst 均为 2D 点数组 */
@@ -229,6 +241,8 @@ export function corners1(
   }
 
   function solve(): Quad {
+    dbg.Ins = null;
+    dbg.Fh = null;
     const R_: number[][] = [];
     for (let f = 0; f < 2; f++) {
       const o = 1 - f;
@@ -286,6 +300,8 @@ export function corners1(
     dbg.H0 = H0;
     const H = refine(cv, H0, S, 3);
     dbg.H = H;
+    dbg.Hsolve = H as unknown as number[];
+    dbg.Ss = S as unknown as Array<[number, number, number, number]>;
 
     // 滑窗：在扩展格点上找真正的棋盘位置
     const M = 4;
@@ -299,24 +315,64 @@ export function corners1(
     ];
     const Wp = warp(cv, img, cw, NN, 40, false);
     const Fh = feats(Wp, null, P.blk, P.gl);
+    dbg.Fh = Fh as unknown[];
     const E: number[][] = [];
     for (let j = 0; j < NN; j++) {
       E.push([]);
       for (let i = 0; i < NN; i++) {
         const pp = lat(i - M, j - M);
         const ins = pp[0] >= 0 && pp[0] < img.cols && pp[1] >= 0 && pp[1] < img.rows;
+        (dbg.Ins = dbg.Ins || []);
+        (dbg.Ins[j] = dbg.Ins[j] || []);
+        dbg.Ins[j][i] = ins ? 1 : 0;
         const x = Fh[j][i];
         const ev = (((P.blk.on ? x.vq < P.blk.t : x.v < 100) && x.circ >= P.rq.ec) || x.line > 30 || x.circ > 0.64) && ins;
         E[j].push(ins ? (ev ? 1 : -1) : -0.2);
       }
     }
 
+    // ── 内向支撑门控（可选，默认关）──────────────────────────
+    // 判据：真棋线贯穿整盘，所以每行/列「指向盘内」的方向上必有若干格测到强手臂；
+    //       木纹边框那条线是孤立的，两个方向都没有支撑。
+    // arm 是双向取 min，真棋盘**边缘行**的外向手臂指向盘外会把 min 拉到 0，
+    // 所以不能用 min(双向)，必须只看内向（max of the two inward directions）。
+    let rowOK: boolean[] | null = null;
+    let colOK: boolean[] | null = null;
+    if (P.rq.is) {
+      const T = P.rq.isT, K = P.rq.isK;
+      const supR = new Array(NN).fill(0), supL = new Array(NN).fill(0);
+      const supDn = new Array(NN).fill(0), supU = new Array(NN).fill(0);
+      for (let j = 0; j < NN; j++) {
+        for (let i = 0; i < NN; i++) {
+          if (!dbg.Ins || !dbg.Ins[j] || !dbg.Ins[j][i]) continue;
+          const L = (Fh[j][i] as { lineD?: number[] }).lineD;
+          if (!L || L.length < 4) continue;
+          // lineD 顺序 [右, 左, 下, 上]
+          if (L[0] > T) supR[i]++;
+          if (L[1] > T) supL[i]++;
+          if (L[2] > T) supDn[j]++;
+          if (L[3] > T) supU[j]++;
+        }
+      }
+      rowOK = supDn.map((v, j) => Math.max(supU[j], v) >= K);
+      colOK = supR.map((v, i) => Math.max(supL[i], v) >= K);
+      dbg.isRowOK = rowOK;
+      dbg.isColOK = colOK;
+    }
+
     let bb: [number, number, number] | null = null;
+    // 并列决胜：门控分相同时用未门控的 raw 分。
+    // 门控把整行/整列压成 -1，容易制造大片并列；只看门控分会让「扫描序最先」
+    // 胜出而不是真正最好的窗口（t1_010 K=3 下有 4 个窗口并列 167）。
+    let bbRaw = -Infinity;
     for (let r0 = 0; r0 <= NN - N; r0++) {
       for (let c0 = 0; c0 <= NN - N; c0++) {
-        let sc = 0;
-        for (let j = r0; j < r0 + N; j++) for (let i = c0; i < c0 + N; i++) sc += E[j][i];
-        if (!bb || sc > bb[0]) bb = [sc, r0, c0];
+        let sc = 0, sr = 0;
+        for (let j = r0; j < r0 + N; j++) for (let i = c0; i < c0 + N; i++) {
+          sr += E[j][i];
+          sc += (rowOK && colOK && (!rowOK[j] || !colOK[i])) ? -1 : E[j][i];
+        }
+        if (!bb || sc > bb[0] || (sc === bb[0] && sr > bbRaw)) { bb = [sc, r0, c0]; bbRaw = sr; }
       }
     }
     const bbr = bb as [number, number, number];
