@@ -206,7 +206,20 @@ async function awaitCv(get: () => unknown, timeoutMs = 120000): Promise<CvLike> 
 async function fetchText(url: string, onProgress?: (p: LoadProgress) => void): Promise<string> {
   const res = await fetch(url);
   if (!res.ok) throw new Error(`opencv fetch failed: ${res.status}`);
-  const total = Number(res.headers.get("content-length") || 0);
+
+  // ⚠️ content-length 是「压缩后」的线上字节，而 res.body 读到的是「解压后」的字节
+  // （浏览器对 br/gzip 是透明解码的）。两者量纲不一致，直接拿 content-length 当分母
+  // 会让进度显示「9.90/2.90 MB」并冲过 100%。
+  //
+  // 实测（jsdelivr，@techstark/opencv-js@4.10.0-release.1/dist/opencv.js）：
+  //   Accept-Encoding: br  → content-length: 3044381  (2.90 MB)  content-encoding: br
+  //   真实解压后           → 10378215 字节 (9.90 MB)
+  //   （gzip 变体干脆不返回 content-length，走 chunked）
+  //
+  // 所以：只要响应带 content-encoding，分母就不可信 → 置 0 表示「未知」，
+  // 由 UI 只显示已下载量；不带压缩时 content-length 才是真实字节数，可以当分母。
+  const enc = (res.headers.get("content-encoding") || "").trim().toLowerCase();
+  let total = enc ? 0 : Number(res.headers.get("content-length") || 0);
 
   if (!res.body || typeof res.body.getReader !== "function") {
     const t = await res.text();
@@ -223,11 +236,20 @@ async function fetchText(url: string, onProgress?: (p: LoadProgress) => void): P
     if (done) break;
     chunks.push(value);
     loaded += value.length;
+    // 自纠正兜底（不依赖任何响应头）：一旦 loaded 超过声明的 content-length，
+    // 就证明两者量纲不同（解压后 vs 压缩后），total 不可信 → 置 0 表示未知。
+    //
+    // 必要性（实测）：Content-Encoding 不在 CORS-safelisted 响应头里，跨域且
+    // 服务端未给 access-control-expose-headers 时，浏览器读到的值是 null
+    // （实测确认）—— 上面那行 enc 判断会失效，此时只剩这条兜底能救。
+    // jsdelivr 有 access-control-expose-headers: *，但别把正确性押在 CDN 配置上。
+    if (total && loaded > total) total = 0;
     onProgress?.({ stage: "fetch-js", loaded, total });
   }
   let s = "";
   for (const c of chunks) s += dec.decode(c, { stream: true });
   s += dec.decode();
+  onProgress?.({ stage: "fetch-js", loaded, total: total || loaded });
   return s;
 }
 

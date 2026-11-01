@@ -43,7 +43,7 @@
   <button class="primary" id="run" disabled>识别</button>
   <button id="bench" disabled>跑测试集</button>
 </div>
-<div id="status">正在后台加载 opencv.js（约 10MB，首次较慢）… 你可以先选照片</div>
+<div id="status">正在后台加载 opencv.js（解压后约 9.9MB，CDN 上压缩传输约 2.9MB，首次较慢）… 你可以先选照片</div>
 
 <div id="stage">
   <!-- ⚠️ 不要用 id="cv"：浏览器会把带 id 的元素暴露成 window.cv，
@@ -330,7 +330,7 @@ $("bench").addEventListener("click", bench);
 //
 // ?local=1 切换的是「opencv.js 从哪来」，与上面的 Worker 无关，是另一回事：
 //   · 默认：从 CDN 拉 9.9MB 的完整 opencv.js（wasm 以 base64 内嵌）
-//   · local：用本地 dist/opencv.stripped.js(223KB) + dist/opencv.wasm(7.6MB)，
+//   · local：用本地 dist/opencv.stripped.js(218KB) + dist/opencv.wasm(7.26MB)，
 //           省掉 base64 解码，并让 emscripten 走 instantiateStreaming
 // 实测差异（chromium）：默认冷缓存 14.2s / 有缓存 5.8s，local 两者均约 0.3s。
 //   差距主要来自外网带宽（从 CDN 拉 9.9MB 通常要几十秒），**不是**编译时间。
@@ -344,8 +344,16 @@ const cvReady = (async () => {
     ...(LOCAL ? { url: "/dist/opencv.stripped.js", wasmUrl: "/dist/opencv.wasm" } : {}),
     timeoutMs: 120000,
     onProgress: (p) => {
-      if (p.stage === "fetch-js" && p.total) {
-        say(`下载 opencv.js ${(p.loaded / 1048576).toFixed(2)}/${(p.total / 1048576).toFixed(2)} MB`);
+      if (p.stage === "fetch-js") {
+        // total 为 0 表示「未知」：CDN 用 br/gzip 时 content-length 是压缩后字节，
+        // 与解压后的 loaded 不同量纲，不能当分母（会显示 9.90/2.90 MB）。
+        // 见 src/cv/adapter.ts 的 fetchText()。
+        const mb = (p.loaded / 1048576).toFixed(2);
+        say(
+          p.total && p.total >= p.loaded
+            ? `下载 opencv.js ${mb}/${(p.total / 1048576).toFixed(2)} MB`
+            : `下载 opencv.js ${mb} MB …`,
+        );
       } else if (p.stage === "patch") {
         say("已切换外置 wasm（流式编译）");
       } else if (p.stage === "compile") {
