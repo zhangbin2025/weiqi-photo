@@ -178,8 +178,13 @@ async function bench() {
         const c = drawToCanvas(im, 2000);
         const exp = parseExpect(await (await fetch(it.txt)).text(), it.rot || 0);
 
+        // ⚠️ 别用 size:0（自动路数检测）—— au.ns=[19,15,13,9] × 2 passes
+        //    最坏要跑 8 次完整 cornersFixed，实测单张 9021ms vs 传 19 的 2152ms（4.2 倍）。
+        //    真值本身就是权威路数，直接用它，bench 才不会把时间浪费在猜路数上。
+        //    （数据集 37 张实测全为 19×19；这里取 exp.N 而非写死 19，避免将来混入
+        //     9/13/15 路图时被误判。）
         const img = cv.imread(c);
-        const r = recognizeBoard(cv, img, { size: 0 });
+        const r = recognizeBoard(cv, img, { size: exp.N });
         img.delete();
 
         let hit = 0;
