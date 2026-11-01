@@ -110,7 +110,7 @@ export interface Params {
 export const DEFAULT_PARAMS: Params = {
   par: { on: false, sr: 0.5, cmin: 0.6, min: 12, tol: 0.18 },
   gl: { on: true, wc: 205, ws: 0.1, wc2: 195, ws2: 0.05, nd: 0.43, ns: 0.1, a: 0.4, b: 0.6, s: 0.05, sv: 248 },
-  yc: { on: true, n: 10, min: 12, add: 0.85, del: 0.2, c: 0.4, ct: 40, rel: 0.5, hn: 5 },
+  yc: { on: true, n: 10, min: 12, add: 0.85, del: 0.2, c: 0.65, ct: 40, rel: 0.5, hn: 5 },
   blk: {
     on: true, mk: 1, q: 40, t: 110,
     ring: true, r0: 0.15, r1: 0.42,
@@ -122,9 +122,9 @@ export const DEFAULT_PARAMS: Params = {
   rs: {
     nbt: true, on: true, lnx: 150, rcpu: 0.95,
     mt: false, mk: 3, tx: 80, sc: 0.8, rf: 0.15, nr: 0.3, mr: 0.6,
-    dup: 0.4, same: 0.5, ilr: 0.3, ct: 20, wb: 1.04, nf: true, k: 200,
+    dup: 0.4, same: 0.5, ilr: 0.3, ct: 20, wb: 1.25, nf: true, k: 200,
     eo: 0.6, or: 0.6, olc: 28, ob: 1.08,
-    r: 0.4, r2: 0.5, c: 0.55, c2: 0.75, d: 0.85, lc: 15, lr: 0.45,
+    r: 0.4, r2: 0.5, c: 0.65, c2: 0.75, d: 0.85, lc: 15, lr: 0.45,
     mid: true, mw: 0.1, mrm: 0.05, pr: 0.3, pb: 0.85, pw: 1.06,
     rc: 2, rcp: 0.2, rcm: 0.5, rch: 0.8, rct: 0.2,
     tie: 0.1, rrf: false, nb2: false,
