@@ -7,7 +7,12 @@
  *   /             → demo/index.html
  *   /dist/*       → 编译产物
  *   /photo/*      → 测试集图片
- *   /bench/list   → 测试集清单（JSON：{dir, items:[{name,img,txt}]}）
+ *   /bench/list   → 测试集清单（JSON：{dir, items:[{name,img,txt,rot}]}）
+ *
+ * ⚠️ rot = 该图 EXIF orientation 对应的「顺时针 90° 旋转次数」。
+ *    真值 .txt 是 RAW 朝向，而浏览器加载图片会自动应用 EXIF 转正，两者差一个
+ *    旋转。前端必须按 rot 把真值转到显示帧再比对，否则带 EXIF 的图全是假失败
+ *    （实测 t1 全组：旋转对齐 11/11 一致，未旋转仅 1/11）。
  *
  * ⚠️ 这里**不提供** /bench/run：跑测试集需要 opencv，而 opencv 只存在于浏览器
  *    （node 端没有 cv，也不可内置）。测试集由前端拿 /bench/list 后逐张在浏览器里跑。
@@ -19,6 +24,7 @@ import http from "node:http";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readOrientation, rotSteps } from "./exif.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -48,7 +54,10 @@ function collect(dir) {
       out.push(...collect(p));
     } else if (e.name.endsWith(".jpg")) {
       const txt = p.replace(/\.jpg$/, ".txt");
-      if (fs.existsSync(txt)) out.push({ jpg: p, txt });
+      // 真值 .txt 存的是 RAW 朝向；浏览器加载图片会自动应用 EXIF 转正。
+      // 带上旋转次数，前端据此把真值转到显示帧再比对，否则带 EXIF 的图
+      // （t1 全组 orientation=3/6）差异全是旋转错位造成的假失败。
+      if (fs.existsSync(txt)) out.push({ jpg: p, txt, rot: rotSteps(readOrientation(fs.readFileSync(p))) });
     }
   }
   return out.sort((a, b) => a.jpg.localeCompare(b.jpg));
@@ -88,6 +97,7 @@ const server = http.createServer((req, res) => {
       name: path.basename(f.jpg),
       img: "/photo/" + path.relative(PHOTO_DIR, f.jpg),
       txt: "/photo/" + path.relative(PHOTO_DIR, f.txt),
+      rot: f.rot ?? 0,
     }));
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ dir: PHOTO_DIR, items }));
@@ -116,6 +126,7 @@ const server = http.createServer((req, res) => {
         name: path.basename(f.jpg),
         img: "/photo/" + path.relative(PHOTO_DIR, f.jpg),
         bytes: st.size,
+        rot: f.rot ?? 0,
         expect,
       };
     });

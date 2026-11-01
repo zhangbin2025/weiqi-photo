@@ -176,7 +176,7 @@ async function bench() {
       try {
         const im = await loadImage(it.img);
         const c = drawToCanvas(im, 2000);
-        const exp = parseExpect(await (await fetch(it.txt)).text());
+        const exp = parseExpect(await (await fetch(it.txt)).text(), it.rot || 0);
 
         const img = cv.imread(c);
         const r = recognizeBoard(cv, img, { size: 0 });
@@ -192,6 +192,7 @@ async function bench() {
         const dbg = r.debug || {};
         rec = {
           name: it.name,
+          rot: it.rot || 0,
           acc,
           N: r.N,
           win: Number(dbg.win) || 0,
@@ -256,9 +257,27 @@ function drawToCanvas(im, maxSide) {
 }
 
 /** 解析期望矩阵：空格分隔的 '.', 'B', 'W' → 0/1/2 */
-function parseExpect(text) {
-  const rows = text.trim().split("\n").map((r) => r.trim().split(/\s+/));
+/**
+ * 解析真值矩阵。
+ *
+ * ⚠️ 真值 .txt 存的是 **RAW 朝向**（未应用 EXIF），而浏览器 `Image.src` → canvas
+ *    会自动应用 EXIF 把图转正，识别管线跑的是转正后的图。两者差一个旋转，
+ *    所以必须按 rot（服务端从 EXIF 解析出的「顺时针 90° 次数」）把真值转到
+ *    显示帧再比对。否则带 EXIF 的图（t1 全组 orientation=3/6）差异全是旋转
+ *    错位造成的假失败 —— 实测 t1 旋转对齐 11/11 一致，未旋转仅 1/11。
+ *
+ * @param {string} text 真值文本（19 行，每行 19 个 '.'/'B'/'W'）
+ * @param {number} rot  顺时针旋转 90° 的次数（0/1/2/3）
+ */
+function parseExpect(text, rot = 0) {
+  let rows = text.trim().split("\n").map((r) => r.trim().split(/\s+/));
   const N = rows.length;
+  // 顺时针旋转 rot 次：(j,i) → (i, N-1-j)
+  for (let k = ((rot % 4) + 4) % 4; k > 0; k--) {
+    const out = [];
+    for (let r = 0; r < N; r++) { out.push([]); for (let c = 0; c < N; c++) out[r][c] = rows[N - 1 - c][r]; }
+    rows = out;
+  }
   const s = new Uint8Array(N * N);
   for (let j = 0; j < N; j++) {
     for (let i = 0; i < N; i++) {
@@ -272,7 +291,7 @@ function parseExpect(text) {
 function renderBench(items, pass, accSum) {
   const rows = items.map((it) => {
     const cls = it.acc === 1 ? "hit" : it.acc >= 0.95 ? "warn" : "miss";
-    return `<tr><td>${it.name}</td><td class="${cls}">${(it.acc * 100).toFixed(1)}%</td>` +
+    return `<tr><td>${it.name}</td><td>${it.rot ? "rot" + it.rot : "-"}</td><td class="${cls}">${(it.acc * 100).toFixed(1)}%</td>` +
            `<td>${it.N}</td><td>${it.win ? it.win.toFixed(2) : "-"}</td><td>${it.ms}ms</td>` +
            `<td>${it.err || ""}</td></tr>`;
   }).join("");
@@ -280,7 +299,7 @@ function renderBench(items, pass, accSum) {
   $("out").innerHTML =
     `<div style="font-size:13px;margin-bottom:8px">已跑 ${items.length} 张 · 全对 ${pass} · 平均 ${avg.toFixed(2)}%</div>` +
     `<table border="1" cellpadding="4" cellspacing="0" style="font-size:12px;border-collapse:collapse">` +
-    `<tr><th>文件</th><th>准确率</th><th>路数</th><th>得分</th><th>耗时</th><th>错误</th></tr>${rows}</table>`;
+    `<tr><th>文件</th><th>旋转</th><th>准确率</th><th>路数</th><th>得分</th><th>耗时</th><th>错误</th></tr>${rows}</table>`;
 }
 
 $("file").addEventListener("change", async (e) => {
