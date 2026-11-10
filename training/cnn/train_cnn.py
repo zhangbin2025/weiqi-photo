@@ -236,7 +236,7 @@ def main():
     meta = {
         "method": "cnn",
         "patch_size": PATCH, "cell": args.cell, "channels": 1,
-        "architecture": "Conv(1,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(800,64)-FC(64,3)",
+        "architecture": "Conv(1,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(2048,64)-FC(64,3)",
         "epochs": args.epochs, "batch_size": args.batch, "lr": args.lr,
         "seed": args.seed, "torch_threads": args.threads,
         "train_frames": len(tr), "val_frames": len(va),

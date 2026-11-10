@@ -163,7 +163,7 @@ python3 -m training.cnn.train_cnn \
 patch → LeNet 风格 CNN（3 类 `.`/`B`/`W`）→ 导出 ONNX。
 
 网络与超参固定为
-`Conv(1,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(800,64)-FC(64,3)`，
+`Conv(1,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(2048,64)-FC(64,3)`，
 Adam lr=1e-3，5 epoch，batch 512，无 dropout、无数据增强。
 
 ### 确定性是怎么保证的
