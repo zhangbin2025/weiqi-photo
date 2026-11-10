@@ -1,0 +1,16 @@
+{
+  "name": "weiqi-photo",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Browser-side Go board photo transcription (CNN / ONNX)",
+  "type": "module",
+  "scripts": {
+    "serve": "node tools/serve.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {}
+}

@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# Node (inference/ itself is dependency-free; this covers local tooling)
+node_modules/
+
+# Training scratch and intermediate artifacts — not committed.
+# The trained model IS committed at training/out-cnn/cnn.onnx (see
+# TRAINING.md); re-running training overwrites that file. Everything else
+# written into the output dir is scratch.
+training/cache/
+training/out-cnn/*
+!training/out-cnn/cnn.onnx
+*.npz
+
+# Editor / OS
+.DS_Store
+*.swp

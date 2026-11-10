@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>weiqi-photo demo</title>
+<style>
+:root { color-scheme: dark; font-family: system-ui, sans-serif; }
+body { margin: 0; background: #14171c; color: #e6e8ec; padding: 16px; max-width: 1000px; }
+h1 { font-size: 16px; margin: 0 0 12px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
+button { background: #2b3240; color: #e6e8ec; border: 1px solid #3a4354; border-radius: 5px; padding: 7px 12px; cursor: pointer; font-size: 13px; }
+button:hover { background: #354056; }
+button:disabled { opacity: 0.4; cursor: default; }
+button.cnn { background: #1a3a2a; border-color: #2a5a3a; }
+button.cnn:hover { background: #245a3a; }
+label, select, input[type=file] { font-size: 13px; color: #cfd4dd; }
+canvas { display: block; width: 100%; height: auto; max-width: 960px; background: #0c0e12; border: 1px solid #2a2f38; border-radius: 4px; cursor: crosshair; touch-action: none; }
+.hint { color: #98a0ae; font-size: 13px; margin: 10px 0; line-height: 1.6; }
+pre { background: #0e1116; border: 1px solid #282e38; border-radius: 5px; padding: 12px; font-family: ui-monospace, Menlo, monospace; font-size: 13px; line-height: 1.45; white-space: pre; overflow: auto; max-height: 60vh; }
+.badge { display: inline-block; padding: 2px 9px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.badge.wait { background: #3a3f4a; color: #cfd4dd; }
+.badge.ok { background: #1f4b36; color: #a9e8c4; }
+.badge.no { background: #5a3320; color: #ffcf9e; }
+</style>
+</head>
+<body>
+<h1>weiqi-photo · 拍照还原棋局 demo</h1>
+<div class="row">
+  <input type="file" id="file" accept="image/*">
+  <label>路数 <select id="lines"><option>19</option><option>13</option><option>9</option></select></label>
+  <button id="reset" type="button">清除四角 / 重选</button>
+  <button id="recognize" class="cnn" type="button" disabled>识别 (CNN)</button>
+  <span id="badge" class="badge wait">待导入图片</span>
+</div>
+<canvas id="view" width="960" height="720"></canvas>
+<p class="hint">导入棋盘照片后，在图上依次点 <b>左上 → 右上 → 右下 → 左下</b> 四个可下子区域的角点；点满第 4 下后点「识别」。<br>
+<span style="color:#6abf8b">CNN</span> 使用随仓库签入的 <code>training/out-cnn/cnn.onnx</code> 在浏览器本地推理；ONNX Runtime 从 CDN 加载，需联网。训练重放方法见 <code>TRAINING.md</code>。</p>
+<pre id="out">（识别结果会显示在这里）</pre>
+<script type="module" src="./main.js"></script>
+</body>
+</html>

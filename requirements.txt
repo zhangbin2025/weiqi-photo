@@ -1,0 +1,12 @@
+# Training-time dependencies only. The inference/ ES modules stay zero-dependency.
+# Versions are the ones actually used for the reproducible run (Python 3.12.3,
+# 2 CPU / 7.5G RAM, no GPU). See TRAINING.md §3.
+#
+# torch's CPU wheel is not on PyPI; the extra index makes "+cpu" resolvable so
+# `pip install -r requirements.txt` works in one shot.
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+numpy==2.5.4        # BSD-3-Clause
+Pillow==13.0.0      # MIT-CMU / HPND-class
+onnx==1.23.2        # Apache-2.0  (torch.onnx export)
+torch==2.15.0+cpu   # BSD-3-Clause (model / training / ONNX export)
