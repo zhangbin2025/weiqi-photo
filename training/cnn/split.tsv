@@ -1,0 +1,62 @@
+# unit	role	why
+g1:1	train	quad+paired frames
+g1:11	val	quad+paired frames
+g1:12	train	quad+paired frames
+g1:2	val	quad+paired frames
+g1:20_03_27_19_18_09	train	quad+paired frames
+g1:20_03_28_17_58_40	train	quad+paired frames
+g1:20_03_29_16_20_04	val	quad+paired frames
+g1:20_03_29_16_33_37	val	quad+paired frames
+g1:20_03_30_19_53_42	val	quad+paired frames
+g1:20_03_30_21_01_44	train	quad+paired frames
+g1:20_04_11_18_08_35	train	quad+paired frames
+g1:20_04_11_19_27_37	val	quad+paired frames
+g1:20_04_13_20_05_51	train	quad+paired frames
+g1:3	train	quad+paired frames
+g1:4	val	quad+paired frames
+g1:5	train	quad+paired frames
+g1:6	val	quad+paired frames
+g1:7	train	quad+paired frames
+g1:9	train	quad+paired frames
+g1:DeLazzari-Greenberg	train	quad+paired frames
+g1:Huber-Fanti3	val	quad+paired frames
+g1:Hueber-Fanti	test	SEALED test split, never trained
+g1:Hueber-Fanti2	test	SEALED test split, never trained
+g1:Martinelli-vandenBusken	train	quad+paired frames
+g1:Metta-Sgaravatti	train	quad+paired frames
+g1:Metta-Sgaravatti2	train	quad+paired frames
+g1:Metta-Sgaravatti4	val	quad+paired frames
+g1:Pantalone-Balzaretti	val	quad+paired frames
+g1:Pantalone-Balzaretti2	val	quad+paired frames
+g1:Piccinno-Sanzone	train	quad+paired frames
+g1:Potorti'-DeLazzari	train	quad+paired frames
+g1:Ragno-Fanti	test	SEALED test split, never trained
+g1:Ragno-Gioia	val	quad+paired frames
+g1:Spallanzani-Piccinno	test	SEALED test split, never trained
+g1:Spallanzani-Piccinno2	val	quad+paired frames
+g1:Spallanzani-Piccinno3	train	quad+paired frames
+g1:synthesized_moves	exclude	excluded subdirectory (duplicate / no matrix truth)
+g1:t2	exclude	excluded subdirectory (duplicate / no matrix truth)
+g1:t3	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:13	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:14	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:15	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:16	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:17	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:18	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:19	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:20	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:22	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:23	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:24	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:25	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:27	exclude	excluded subdirectory (duplicate / no matrix truth)
+g2:Corsolini-Carta	train	quad+paired frames
+g2:DeLucia-Pace	test	SEALED test split, never trained
+g2:Grazzini-Bevegni	train	quad+paired frames
+g2:Grazzini-Bevegni2	val	quad+paired frames
+g2:Pace-Zingoni	test	SEALED test split, never trained
+g2:Pignelli-Albano	train	quad+paired frames
+g2:Pignelli-Albano2	train	quad+paired frames
+g2:Zingoni-Shakhov12	val	quad+paired frames
+g2:Zingoni_Shakhov1	val	quad+paired frames
