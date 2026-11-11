@@ -45,7 +45,7 @@
 | 参与训练/验证的帧 | **1620**（`dataset/` 951 帧 + `dataset2/` 669 帧）|
 | train / val | **1325 / 295** 帧 |
 | 涉及的 unit（一局棋一个目录）| **39**（22 train / 17 val）|
-| 每帧切出的 patch | 19 × 19 = 361，共 **584820** 个 40×40 单通道 patch |
+| 每帧切出的 patch | 19 × 19 = 361，共 **584820** 个 40×40 双通道 patch（V/M，见 §4） |
 | 未参与 | `split.tsv` 标注为封存 test 的 6 个 gomrade unit / 506 帧、无四角或无疑似重复的子目录 |
 | 图片 EXIF | 这 39 个 unit 全部为无 tag 或 tag=1，**不做任何朝向旋转** |
 
@@ -162,9 +162,30 @@ python3 -m training.cnn.train_cnn \
 解析真值 → 从 yml 读四角 → `warp_perspective` 透视拉正 → 每交叉点切 40×40
 patch → LeNet 风格 CNN（3 类 `.`/`B`/`W`）→ 导出 ONNX。
 
+### 输入的两个通道（数值来源）
+
+透视校正时，每个像素得到插值后的 R/G/B 三个分量，由此产生两个通道，
+都是**逐像素统计量**，无阈值、无几何常数、无自由参数：
+
+- `V = max(R,G,B)`（uint8 0..255）—— 沿用原有单值通道，计算一字未改；
+- `M = min(R,G,B)`（uint8 0..255）—— 新增；max 与 min 之差携带颜色/对比度
+  信息，使「亮白子」与「深色空位」更易区分。
+
+两通道取自同一组插值后的 R/G/B，`M ≤ V` 恒成立；NCHW 布局中 channel 0 = V、
+channel 1 = M。训练侧 `training/cnn/warp.py` 与推理侧 `inference/src/warp.mjs`
+必须产出同样的两平面；`inference/src/cnn_inference.mjs` 的
+`extractPatches` 与 ONNX 输入张量 `[N,2,40,40]` 同步。
+
 网络与超参固定为
-`Conv(1,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(2048,64)-FC(64,3)`，
-Adam lr=1e-3，5 epoch，batch 512，无 dropout、无数据增强。
+`Conv(2,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(2048,64)-FC(64,3)`，
+Adam lr=1e-3，5 epoch，batch 512，无 dropout、无数据增强。仅第一层
+`in_channels` 由 1 改为 2（参数量 136131 → 136275），其余不变。
+
+> 为什么不引入阈值/后处理：项目要求任何数值常数都能说清来源、可复算、可争议。
+> 双通道把判别交给卷积学习，避免引入来源不明的门槛或手工几何参数。
+> JS↔Python 逐像素对比中，V/M 各存在 max|diff|=1（约 0.7% 像素）的舍入差异，
+> 由两侧 homography 求解器（8×8 高斯消元 vs `numpy.linalg.solve`）浮点路径
+> 不同导致，单通道时代即已存在；双通道未引入新的不对齐。
 
 ### 确定性是怎么保证的
 
@@ -204,17 +225,32 @@ cmp /tmp/cnn.onnx.before training/out-cnn/cnn.onnx && echo "字节一致"
 # 或者：git diff --exit-code -- training/out-cnn/cnn.onnx
 ```
 
-本仓库签入的版本已用**完全相同的命令、在两个独立输出目录里连续重跑两遍**，
+本仓库签入的（双通道）版本已用**完全相同的命令、在两个独立输出目录里连续重跑两遍**，
 两次 `cnn.onnx` 与 `cnn.pt` 均逐字节一致：
 
 ```
-51b38d3570da058edc7873b855ee34e9a458cc0324b944589f088b2388745326  cnn.onnx  (545915 B)
+874d8877b54df03e4ba2c2c55b33cff94ab9a5b1ed75f3ad692f43425992afe4  cnn.onnx  (546491 B)
 ```
 
 两遍的 `sample order sha256` 同为
-`6f2a403c7bfa9e8b2a57cc1278be0aa53ea171d8c6c9420ca35a6f44c67f0f61`，
-`val_acc` 同为 `0.9835`。签入文件即第二遍产物。若你的环境版本与上表不同，
-`cmp` 可能失败，但训练流程与模型结构仍然一致。
+`6f2a403c7bfa9e8b2a57cc1278be0aa53ea171d8c6c9420ca35a6f44c67f0f61`
+（与 1 通道版本相同，输入划分未变），`val_acc` 同为 `0.9947`。
+签入文件即第二遍产物。若你的环境版本与上表不同，`cmp` 可能失败，
+但训练流程与模型结构仍然一致。
+
+双通道版本在 val（106495 格）上的混淆矩阵（行=真值 `.`/`B`/`W`，
+列=预测 `.`/`B`/`W`）：
+
+```
+[[89601,  141,   46]
+ [   89, 8125,    1]
+ [  249,   37, 8206]]
+```
+
+`wrong=563`（val_acc `0.9947`），白召回 `0.9663`、黑召回 `0.9890`、空召回 `0.9979`；
+漏白 249、幽灵白 46、伪黑 141。作为对照，此前 1 通道签入版本为
+`wrong=1760`、白召回 `0.8331`（签入 sha `51b38d35…`，545915 B）。
+这些是离线 CPU eval 数字，仅作相对对比，最终以浏览器实测为准。
 
 ---
 

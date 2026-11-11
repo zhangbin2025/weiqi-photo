@@ -2,13 +2,16 @@
  * Perspective warp (inverse homography + bilinear), pure ES module.
  *
  * Maps the playable-grid quadrilateral into a square image where every grid
- * cell is `cell` pixels, with a `cell`-pixel margin on each side. Only the
- * value channel `V` (max of R,G,B, 0..255) is produced — the CNN consumes it
- * directly to cut 40x40 patches. No hand-crafted features are used.
+ * cell is `cell` pixels, with a `cell`-pixel margin on each side. Two channels
+ * are produced from the SAME bilinearly interpolated R/G/B: `V` = max(R,G,B)
+ * and `M` = min(R,G,B), both uint8 0..255. The CNN consumes them as a
+ * 2-channel patch (V, M). No hand-crafted features, thresholds or geometry
+ * constants are introduced.
  *
  * JS↔Python parity: the homography is solved independently (8×8 Gaussian
  * elimination vs numpy.linalg.solve), but both target the same unit-square
- * parameterisation and bilinear interpolation formula.
+ * parameterisation and bilinear interpolation formula. Both channels are
+ * checked against training/cnn/warp.py pixel-by-pixel.
  */
 
 /** Solve an n×n linear system by Gaussian elimination with partial pivoting. */
@@ -76,7 +79,7 @@ function invert3(m) {
  * @param {number[][]} quad — four [x,y] raster corners (TL, TR, BR, BL)
  * @param {number} nLines — board size (19 / 13 / 9)
  * @param {number} cell — pixels per grid cell in the warped image
- * @returns {{V:Uint8Array, Wd:number, cell:number}}
+ * @returns {{V:Uint8Array, M:Uint8Array, Wd:number, cell:number}}
  */
 export function warpPerspective(bench, quad, nLines, cell) {
   const { data, width: sW, height: sH } = bench;
@@ -89,6 +92,7 @@ export function warpPerspective(bench, quad, nLines, cell) {
   const Hi = invert3(H);
 
   const V = new Uint8Array(Wd * Wd);
+  const M = new Uint8Array(Wd * Wd);
 
   for (let gy = 0; gy < Wd; gy++) {
     const v = (gy - margin) / S;
@@ -121,8 +125,9 @@ export function warpPerspective(bench, quad, nLines, cell) {
       const g = data[i00 + 1] * w00 + data[i10 + 1] * w10 + data[i01 + 1] * w01 + data[i11 + 1] * w11;
       const b = data[i00 + 2] * w00 + data[i10 + 2] * w10 + data[i01 + 2] * w01 + data[i11 + 2] * w11;
       V[gy * Wd + gx] = Math.max(r, g, b);
+      M[gy * Wd + gx] = Math.min(r, g, b);
     }
   }
 
-  return { V, Wd, cell };
+  return { V, M, Wd, cell };
 }

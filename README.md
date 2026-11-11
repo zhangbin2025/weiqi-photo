@@ -6,7 +6,8 @@
 实现：在同一份公开标注数据集上，用 `training/cnn/train_cnn.py` 可**字节级回放**
 地训练出 CNN 模型；该模型随仓库签入 `training/out-cnn/cnn.onnx`。推理侧用 ONNX
 Runtime Web 在浏览器本地加载模型，把四角内的棋盘透视校正后，对每个交叉点切
-40×40 灰度 patch 做三分类，得到棋子与坐标。全程不上传服务器。
+40×40 双通道 patch（`V=max(R,G,B)` 与 `M=min(R,G,B)`）做三分类，
+得到棋子与坐标。全程不上传服务器。
 
 本仓库包含推理代码、训练代码、已签入的模型和完整的训练说明；**不含训练数据**
 （数据从 Kaggle 自行获取，见下）。
@@ -70,7 +71,7 @@ python3 -m training.cnn.train_cnn --data <gomrade 解压目录> --out training/o
 （作者 davids1992）及所有贡献者。**
 
 本项目签入的 CNN 模型完全由该数据集训练得到：1620 帧（1325 train / 295 val）、
-39 个 unit、584820 个 40×40 patch。没有这份公开标注数据，就没有这个模型。
+39 个 unit、584820 个 40×40 双通道 patch。没有这份公开标注数据，就没有这个模型。
 数据来源、划分方式、过滤规则与完整许可说明见 `TRAINING.md` §1。
 
 gomrade 采用 **[CC BY-NC-ND 4.0](https://creativecommons.org/licenses/by-nc-nd/4.0/)**：

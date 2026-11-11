@@ -2,8 +2,11 @@
 
 Given the source RGB image and four board corners, produces a square board
 image where every grid cell is `cell` pixels wide, with a `cell`-pixel margin
-on each side. Only the value channel ``V`` (max of R,G,B, 0..255) is produced —
-the CNN consumes it directly to cut patches. No hand-crafted features are used.
+on each side. Two per-pixel channels are produced from the SAME bilinearly
+interpolated R/G/B: ``V`` = max(R,G,B) and ``M`` = min(R,G,B), both uint8
+0..255. The CNN consumes them as a 2-channel patch (V, M). No hand-crafted
+features, thresholds or geometry constants are introduced: min/max are exact
+per-pixel statistics with no free parameters.
 
 The warp maps the playable-grid quadrilateral to a square of side
 (N-1)*cell with a `cell`-pixel margin on each side.
@@ -16,8 +19,8 @@ import numpy as np
 def warp_perspective(rgb, quad, n_lines, cell):
     """Warp the board region into a square image.
 
-    Returns dict with ``V`` (uint8 [Wd,Wd], max of R/G/B) and ``Wd`` (side
-    length in pixels), plus ``cell``.
+    Returns dict with ``V`` (uint8 [Wd,Wd], max of R/G/B), ``M`` (uint8
+    [Wd,Wd], min of R/G/B), ``Wd`` (side length in pixels), plus ``cell``.
     """
     sH, sW = rgb.shape[:2]
     margin = cell
@@ -73,4 +76,5 @@ def warp_perspective(rgb, quad, n_lines, cell):
     Bv = src_b[y0c, x0c] * w00 + src_b[y0c, x1c] * w10 + src_b[y1c, x0c] * w01 + src_b[y1c, x1c] * w11
 
     V = np.maximum(np.maximum(R, Gv), Bv).astype(np.uint8)
-    return {"V": V, "cell": cell, "Wd": Wd}
+    M = np.minimum(np.minimum(R, Gv), Bv).astype(np.uint8)
+    return {"V": V, "M": M, "cell": cell, "Wd": Wd}

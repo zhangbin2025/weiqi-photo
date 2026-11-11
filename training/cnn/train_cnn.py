@@ -52,7 +52,11 @@ SEED = 20261105
 
 
 def precompute_patches(samples, cell, label):
-    """Warp + cut patches for all samples. Returns uint8 [N,40,40], int64 [N]."""
+    """Warp + cut patches for all samples.
+
+    Returns uint8 [N,2,40,40] (channel 0 = V=max(RGB), channel 1 = M=min(RGB),
+    both from the same bilinear interpolation) and int64 [N] labels.
+    """
     n = len(samples)
     lines = truth_matrix(samples[0]).shape[0]
     for s in samples[1:]:
@@ -60,7 +64,7 @@ def precompute_patches(samples, cell, label):
             raise ValueError("all frames in one run must share the same board size")
     ppf = lines * lines
     total = n * ppf
-    X = np.empty((total, PATCH, PATCH), dtype=np.uint8)
+    X = np.empty((total, 2, PATCH, PATCH), dtype=np.uint8)
     y = np.empty(total, dtype=np.int64)
     t0 = time.time()
     for i, s in enumerate(samples):
@@ -68,6 +72,7 @@ def precompute_patches(samples, cell, label):
         tm = truth_matrix(s)
         warped = warp_perspective(rgb, s["quad"], lines, cell)
         V = warped["V"]
+        M = warped["M"]
         Wd = warped["Wd"]
         margin = cell
         for row in range(lines):
@@ -79,7 +84,8 @@ def precompute_patches(samples, cell, label):
                 y0 = int(cy) - HALF
                 sy0 = max(0, y0); sy1 = min(Wd, y0 + PATCH)
                 sx0 = max(0, x0); sx1 = min(Wd, x0 + PATCH)
-                X[idx, sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = V[sy0:sy1, sx0:sx1]
+                X[idx, 0, sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = V[sy0:sy1, sx0:sx1]
+                X[idx, 1, sy0 - y0:sy1 - y0, sx0 - x0:sx1 - x0] = M[sy0:sy1, sx0:sx1]
                 y[idx] = tm[row, col]
         if (i + 1) % 200 == 0:
             el = int(time.time() - t0)
@@ -150,7 +156,7 @@ def main():
 
     # --- Model ---
     model = nn.Sequential(
-        nn.Conv2d(1, 16, 3), nn.ReLU(), nn.MaxPool2d(2),  # 40→38→19
+        nn.Conv2d(2, 16, 3), nn.ReLU(), nn.MaxPool2d(2),  # 40→38→19
         nn.Conv2d(16, 32, 3), nn.ReLU(), nn.MaxPool2d(2), # 19→17→8
         nn.Flatten(),
         nn.Linear(32 * 8 * 8, 64), nn.ReLU(),
@@ -171,7 +177,7 @@ def main():
         correct = 0
         for start in range(0, n, args.batch):
             idx = perm[start:start + args.batch]
-            xb = torch.from_numpy(Xtr[idx]).float().unsqueeze(1) / 255.0
+            xb = torch.from_numpy(Xtr[idx]).float() / 255.0
             yb = torch.from_numpy(ytr[idx])
             opt.zero_grad()
             out = model(xb)
@@ -186,7 +192,7 @@ def main():
         vcorrect = 0
         with torch.no_grad():
             for start in range(0, len(Xva), args.batch):
-                xb = torch.from_numpy(Xva[start:start+args.batch]).float().unsqueeze(1) / 255.0
+                xb = torch.from_numpy(Xva[start:start+args.batch]).float() / 255.0
                 yb = torch.from_numpy(yva[start:start+args.batch])
                 out = model(xb)
                 vcorrect += (out.argmax(1) == yb).sum().item()
@@ -200,7 +206,7 @@ def main():
     preds = np.empty(len(Xva), dtype=np.int64)
     with torch.no_grad():
         for start in range(0, len(Xva), args.batch):
-            xb = torch.from_numpy(Xva[start:start+args.batch]).float().unsqueeze(1) / 255.0
+            xb = torch.from_numpy(Xva[start:start+args.batch]).float() / 255.0
             out = model(xb)
             preds[start:start+args.batch] = out.argmax(1).numpy()
 
@@ -223,7 +229,7 @@ def main():
 
     # A constant dummy: torch.randn would consume RNG state and make the ONNX
     # export itself non-reproducible across runs with different call order.
-    dummy = torch.zeros(1, 1, PATCH, PATCH)
+    dummy = torch.zeros(1, 2, PATCH, PATCH)
     torch.onnx.export(model, dummy, str(onnx_path),
                       input_names=["patch"], output_names=["logits"],
                       dynamic_axes={"patch": {0: "batch"}, "logits": {0: "batch"}},
@@ -235,8 +241,8 @@ def main():
     # --- Meta + eval JSON ---
     meta = {
         "method": "cnn",
-        "patch_size": PATCH, "cell": args.cell, "channels": 1,
-        "architecture": "Conv(1,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(2048,64)-FC(64,3)",
+        "patch_size": PATCH, "cell": args.cell, "channels": 2,
+        "architecture": "Conv(2,16,3)-ReLU-MaxPool-Conv(16,32,3)-ReLU-MaxPool-FC(2048,64)-FC(64,3)",
         "epochs": args.epochs, "batch_size": args.batch, "lr": args.lr,
         "seed": args.seed, "torch_threads": args.threads,
         "train_frames": len(tr), "val_frames": len(va),
